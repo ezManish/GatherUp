@@ -2,16 +2,15 @@ import express from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
-import { PrismaClient } from '@prisma/client';
-import { MongoClient } from 'mongodb';
+import { MongoClient, ObjectId } from 'mongodb'; // Fixed: Import ObjectId
+import prisma from './prisma.js'; // Fixed: Use singleton
 
 dotenv.config();
 const app = express();
 app.use(cors());
-app.use(express.json({limit: '5mb'}));
+app.use(express.json({ limit: '5mb' }));
 app.use(morgan('dev'));
 
-const prisma = new PrismaClient();
 const PORT = process.env.PORT || 4000;
 
 // Mongo (announcements, qna)
@@ -34,9 +33,10 @@ const mem = { announcements: [], qna_threads: [] };
 // Health
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
-// Users (very basic)
+// Users
 app.post('/users', async (req, res) => {
   const { email, name, role } = req.body;
+  if (!email || !name || !role) return res.status(400).json({ error: 'Missing required fields' }); // Added validation
   try {
     const user = await prisma.user.create({ data: { email, name, role } });
     res.json(user);
@@ -47,13 +47,14 @@ app.post('/users', async (req, res) => {
 
 // Events
 app.get('/events', async (req, res) => {
-  const events = await prisma.event.findMany({ orderBy: { startAt: 'asc' }});
+  const events = await prisma.event.findMany({ orderBy: { startAt: 'asc' } });
   res.json(events);
 });
 app.post('/events', async (req, res) => {
   const { title, mode, status, startAt, endAt } = req.body;
+  if (!title || !startAt || !endAt) return res.status(400).json({ error: 'Missing required fields' }); // Added validation
   try {
-    const event = await prisma.event.create({ data: { title, mode, status, startAt: new Date(startAt), endAt: new Date(endAt) } });
+    const event = await prisma.event.create({ data: { title, mode: mode || 'virtual', status: status || 'upcoming', startAt: new Date(startAt), endAt: new Date(endAt) } });
     res.json(event);
   } catch (e) {
     res.status(400).json({ error: e.message });
@@ -68,11 +69,12 @@ app.get('/events/:id', async (req, res) => {
 // Teams
 app.post('/teams', async (req, res) => {
   const { name, eventId, ownerUserId } = req.body;
+  if (!name || !eventId || !ownerUserId) return res.status(400).json({ error: 'Missing required fields' }); // Added validation
   try {
     const team = await prisma.team.create({
       data: {
         name, eventId,
-        inviteCode: Math.random().toString(36).slice(2,8),
+        inviteCode: Math.random().toString(36).slice(2, 8),
         members: { create: [{ role: 'owner', userId: ownerUserId }] }
       },
       include: { members: true }
@@ -84,7 +86,8 @@ app.post('/teams', async (req, res) => {
 });
 app.post('/teams/join', async (req, res) => {
   const { inviteCode, userId } = req.body;
-  const team = await prisma.team.findFirst({ where: { inviteCode }, include: { members: true } });
+  if (!inviteCode || !userId) return res.status(400).json({ error: 'Missing inviteCode or userId' }); // Added validation
+  const team = await prisma.team.findUnique({ where: { inviteCode }, include: { members: true } }); // Fixed: findFirst -> findUnique for unique field (optimization)
   if (!team) return res.status(404).json({ error: 'Invalid code' });
   if (team.members.length >= team.sizeLimit) return res.status(400).json({ error: 'Team is full' });
   try {
@@ -98,6 +101,7 @@ app.post('/teams/join', async (req, res) => {
 // Submissions
 app.post('/events/:eventId/submissions', async (req, res) => {
   const { title, repoUrl, demoUrl, stage, teamId } = req.body;
+  if (!title || !teamId || !stage) return res.status(400).json({ error: 'Missing required fields' }); // Added validation
   try {
     const s = await prisma.submission.create({ data: { title, repoUrl, demoUrl, stage, teamId, eventId: req.params.eventId } });
     res.json(s);
@@ -113,11 +117,18 @@ app.get('/events/:eventId/submissions', async (req, res) => {
 // Reviews
 app.post('/submissions/:id/reviews', async (req, res) => {
   const { judgeId, scoreImpact, scoreInnovation, scoreUx, scoreTech, comments } = req.body;
+  if (!judgeId) return res.status(400).json({ error: 'Missing judgeId' });
   try {
-    const r = await prisma.review.create({ data: {
-      submissionId: req.params.id, judgeId,
-      scoreImpact, scoreInnovation, scoreUx, scoreTech, comments
-    }});
+    const r = await prisma.review.create({
+      data: {
+        submissionId: req.params.id, judgeId,
+        scoreImpact: parseInt(scoreImpact) || 0, // Added parsing
+        scoreInnovation: parseInt(scoreInnovation) || 0,
+        scoreUx: parseInt(scoreUx) || 0,
+        scoreTech: parseInt(scoreTech) || 0,
+        comments
+      }
+    });
     res.json(r);
   } catch (e) {
     res.status(400).json({ error: e.message });
@@ -127,7 +138,7 @@ app.post('/submissions/:id/reviews', async (req, res) => {
 // Leaderboard
 app.get('/events/:eventId/leaderboard', async (req, res) => {
   const rows = await prisma.review.findMany({
-    where: { submission: { eventId: req.params.eventId }},
+    where: { submission: { eventId: req.params.eventId } },
     include: { submission: { include: { team: true } } }
   });
   const map = new Map();
@@ -138,7 +149,7 @@ app.get('/events/:eventId/leaderboard', async (req, res) => {
     cur.total += total;
     map.set(sid, cur);
   }
-  const leaderboard = Array.from(map.values()).sort((a,b)=>b.total-a.total);
+  const leaderboard = Array.from(map.values()).sort((a, b) => b.total - a.total);
   res.json({ eventId: req.params.eventId, leaderboard });
 });
 
@@ -150,8 +161,8 @@ app.post('/events/:eventId/announce', async (req, res) => {
       const r = await mongoDb.collection('announcements').insertOne(doc);
       res.json({ _id: r.insertedId, ...doc });
     } else {
-      mem.announcements.push({ _id: mem.announcements.length+1, ...doc });
-      res.json(mem.announcements[mem.announcements.length-1]);
+      mem.announcements.push({ _id: mem.announcements.length + 1, ...doc });
+      res.json(mem.announcements[mem.announcements.length - 1]);
     }
   } catch (e) {
     res.status(400).json({ error: e.message });
@@ -162,7 +173,7 @@ app.get('/events/:eventId/announce', async (req, res) => {
     const items = await mongoDb.collection('announcements').find({ event_id: req.params.eventId }).sort({ created_at: -1 }).toArray();
     res.json(items);
   } else {
-    res.json(mem.announcements.filter(a=>a.event_id===req.params.eventId).reverse());
+    res.json(mem.announcements.filter(a => a.event_id === req.params.eventId).reverse());
   }
 });
 
@@ -173,17 +184,21 @@ app.post('/events/:eventId/qna', async (req, res) => {
     const r = await mongoDb.collection('qna_threads').insertOne(doc);
     res.json({ _id: r.insertedId, ...doc });
   } else {
-    mem.qna_threads.push({ _id: mem.qna_threads.length+1, ...doc });
-    res.json(mem.qna_threads[mem.qna_threads.length-1]);
+    mem.qna_threads.push({ _id: mem.qna_threads.length + 1, ...doc });
+    res.json(mem.qna_threads[mem.qna_threads.length - 1]);
   }
 });
 app.post('/qna/:id/reply', async (req, res) => {
   const msg = { user_id: req.body.user_id, text: req.body.text, ts: new Date() };
   if (mongoDb) {
-    await mongoDb.collection('qna_threads').updateOne({ _id: new MongoClient.ObjectId(req.params.id) }, { $push: { messages: msg }});
-    res.json({ ok: true });
+    try {
+      await mongoDb.collection('qna_threads').updateOne({ _id: new ObjectId(req.params.id) }, { $push: { messages: msg } }); // Fixed: use new ObjectId
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(400).json({ error: "Invalid ID or database error" });
+    }
   } else {
-    const t = mem.qna_threads.find(x=>String(x._id)===req.params.id);
+    const t = mem.qna_threads.find(x => String(x._id) === req.params.id);
     if (!t) return res.status(404).json({ error: 'Not found' });
     t.messages.push(msg);
     res.json({ ok: true });
@@ -191,6 +206,7 @@ app.post('/qna/:id/reply', async (req, res) => {
 });
 
 // Start
+// Trigger restart
 initMongo().finally(() => {
   app.listen(PORT, () => console.log(`API running http://localhost:${PORT}`));
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 
 export default function EventsPage() {
   const [events, setEvents] = useState([
@@ -35,10 +35,10 @@ export default function EventsPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
-    
+
     try {
       await new Promise(resolve => setTimeout(resolve, 1000));
-      
+
       const newEvent = {
         id: events.length + 1,
         name: formData.eventName,
@@ -46,9 +46,9 @@ export default function EventsPage() {
         status: formData.eventStatus,
         date: new Date(formData.startDate).toLocaleDateString() || 'TBD'
       };
-      
+
       setEvents(prev => [...prev, newEvent]);
-      
+
       setFormData({
         eventName: '',
         eventType: 'online',
@@ -56,10 +56,10 @@ export default function EventsPage() {
         startDate: '',
         endDate: ''
       });
-      
+
       setSubmitStatus('success');
       setTimeout(() => setSubmitStatus(''), 3000);
-      
+
     } catch (error) {
       console.error('Error creating event:', error);
       setSubmitStatus('error');
@@ -143,7 +143,7 @@ export default function EventsPage() {
         position: 'relative',
         zIndex: 10
       }}>
-        
+
         {/* Events Section */}
         <div style={{
           background: 'rgba(255, 255, 255, 0.95)',
@@ -174,10 +174,10 @@ export default function EventsPage() {
               borderRadius: '2px'
             }}></div>
           </h2>
-          
+
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             {events.map((event) => (
-              <div 
+              <div
                 key={event.id}
                 style={{
                   background: 'linear-gradient(135deg, #667eea, #764ba2)',
@@ -498,13 +498,13 @@ export default function EventsPage() {
                 transition: 'all 0.3s ease',
                 textTransform: 'uppercase',
                 letterSpacing: '1px',
-                background: isSubmitting 
-                  ? '#9ca3af' 
+                background: isSubmitting
+                  ? '#9ca3af'
                   : submitStatus === 'success'
-                  ? 'linear-gradient(135deg, #10b981, #059669)'
-                  : submitStatus === 'error'
-                  ? 'linear-gradient(135deg, #ef4444, #dc2626)'
-                  : 'linear-gradient(135deg, #667eea, #764ba2)',
+                    ? 'linear-gradient(135deg, #10b981, #059669)'
+                    : submitStatus === 'error'
+                      ? 'linear-gradient(135deg, #ef4444, #dc2626)'
+                      : 'linear-gradient(135deg, #667eea, #764ba2)',
                 boxShadow: '0 8px 30px rgba(102, 126, 234, 0.3)'
               }}
               onMouseEnter={(e) => {
@@ -520,13 +520,13 @@ export default function EventsPage() {
                 }
               }}
             >
-              {isSubmitting 
-                ? 'Creating Event...' 
+              {isSubmitting
+                ? 'Creating Event...'
                 : submitStatus === 'success'
-                ? '✓ Event Created Successfully!'
-                : submitStatus === 'error'
-                ? '✗ Error Creating Event'
-                : 'Create Event'
+                  ? '✓ Event Created Successfully!'
+                  : submitStatus === 'error'
+                    ? '✗ Error Creating Event'
+                    : 'Create Event'
               }
             </button>
 
@@ -542,7 +542,7 @@ export default function EventsPage() {
                 🎉 Event has been created successfully!
               </div>
             )}
-            
+
             {submitStatus === 'error' && (
               <div style={{
                 padding: '1rem',
